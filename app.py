@@ -22,6 +22,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Store uploaded text in memory
+uploaded_text = ""
+
 @app.route('/')
 def upload_form():
     files = os.listdir(UPLOAD_FOLDER)
@@ -35,7 +38,7 @@ def upload_form():
             body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f4f4f4; }
             .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1); }
             form { margin: 20px 0; }
-            input[type="file"] { display: block; margin: 10px auto; }
+            input[type="file"], textarea { display: block; margin: 10px auto; width: 100%; }
             ul { list-style-type: none; padding: 0; }
             li { margin: 10px 0; }
             a { text-decoration: none; color: blue; font-weight: bold; }
@@ -64,6 +67,11 @@ def upload_form():
                     fileList.innerHTML = result.files.map(file => `
                         <li><a href="/uploads/${file}" target="_blank">${file}</a></li>
                     `).join('');
+
+                    // Update the textarea with the uploaded text
+                    if (result.text) {
+                        document.querySelector('textarea[name="text"]').value = result.text;
+                    }
                 }
             }
         </script>
@@ -73,52 +81,66 @@ def upload_form():
             <h1>Upload Files</h1>
             <form onsubmit="uploadFile(event)">
                 <input type="file" name="file">
+                <textarea name="text" placeholder="Enter text to upload">{{ uploaded_text }}</textarea>
                 <input type="submit" value="Upload">
             </form>
             <div class="message" style="color: black;"></div>
             <h2>Received Files</h2>
             <ul>
-                {% for img in files %}
-                    <li><a href="/uploads/{{ img }}" target="_blank">{{ img }}</a></li>
+                {% for file in files %}
+                    <li><a href="/uploads/{{ file }}" target="_blank">{{ file }}</a></li>
                 {% endfor %}
             </ul>
         </div>
     </body>
     </html>
-    ''', files=files)
+    ''', files=files, uploaded_text=uploaded_text)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({
-            'success': False,
-            'message': 'No file part',
-            'color': 'red',
-            'files': os.listdir(app.config['UPLOAD_FOLDER'])
-        })
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({
-            'success': False,
-            'message': 'No selected file',
-            'color': 'red',
-            'files': os.listdir(app.config['UPLOAD_FOLDER'])
-        })
-    try:
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
-        return jsonify({
-            'success': True,
-            'message': 'File uploaded successfully',
-            'color': 'green',
-            'files': os.listdir(app.config['UPLOAD_FOLDER'])
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error uploading file: {str(e)}',
-            'color': 'red',
-            'files': os.listdir(app.config['UPLOAD_FOLDER'])
-        })
+    global uploaded_text
+
+    # Initialize response variables
+    message = ""
+    color = "black"
+    success = False
+
+    # Handle file upload
+    if 'file' in request.files:
+        file = request.files['file']
+        if file.filename != '':
+            try:
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
+                message = "File uploaded successfully."
+                color = "green"
+                success = True
+            except Exception as e:
+                message = f'Error uploading file: {str(e)}'
+                color = "red"
+
+    # Handle text upload
+    text = request.form.get('text', '').strip()
+    if text:
+        uploaded_text = text  # Store the uploaded text in memory
+        if success:
+            message += " Text uploaded successfully."
+        else:
+            message = "Text uploaded successfully."
+            color = "green"
+            success = True
+
+    # If no file or text is provided
+    if not success:
+        message = "No file or text provided."
+        color = "red"
+
+    return jsonify({
+        'success': success,
+        'message': message,
+        'color': color,
+        'files': os.listdir(app.config['UPLOAD_FOLDER']),
+        'text': uploaded_text  # Return the uploaded text to display in the textarea
+    })
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -207,7 +229,7 @@ class FileTransferApp:
             "This application allows you to transfer files between devices on the same network.\n\n"
             "1. Click 'Start Server' to start the file transfer server.\n"
             "2. Scan the QR code or open the provided URL in a browser on another device.\n"
-            "3. Upload files using the web interface.\n"
+            "3. Upload files or text using the web interface.\n"
             "4. Files will be saved in the 'uploads' folder on the server.\n"
             "5. Click 'Preview Uploads' to view uploaded files in your browser.\n\n"
             "---------------------------------------------------------------------------------\n\n"
